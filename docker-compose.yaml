@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  kong:
+    image: kong:latest
+    networks:
+      - [cite_start]frontend_net
+    ports:
+      - "8000:8000"
+
+  auth-service:
+    build: ../auth-service
+    networks:
+      - [cite_start]frontend_net
+      - [cite_start]backend_net
+
+  logic-service:
+    build: ../logic-service
+    networks:
+      - [cite_start]backend_net
+
+  io-service:
+    build: ../io-service
+    networks:
+      - [cite_start]backend_net
+
+  db_postgre:
+    image: postgres:latest
+    networks:
+      - [cite_start]backend_net
+
+  db_influx:
+    image: influxdb:latest
+    networks:
+      - [cite_start]backend_net
+
+  [cite_start]adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - [cite_start]backend_net
+
+networks:
+  [cite_start]frontend_net:
+  [cite_start]backend_net:
