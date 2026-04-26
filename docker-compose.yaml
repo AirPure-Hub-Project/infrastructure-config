@@ -3,44 +3,71 @@ version: '3.8'
 services:
   kong:
     image: kong:latest
+    environment:
+      KONG_DATABASE: "off" # Pentru simplitate în Etapa 2, folosim modul DB-less
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
     networks:
-      - [cite_start]frontend_net
+      - frontend_net
     ports:
       - "8000:8000"
 
   auth-service:
     build: ../auth-service
+    environment:
+      - DB_URL=postgresql://user:password@db_postgre:5432/airpure_users
+      - JWT_SECRET=cheie_secreta_idp
     networks:
-      - [cite_start]frontend_net
-      - [cite_start]backend_net
+      - frontend_net
+      - backend_net
 
   logic-service:
     build: ../logic-service
     networks:
-      - [cite_start]backend_net
+      - backend_net
 
   io-service:
     build: ../io-service
+    environment:
+      - INFLUX_URL=http://db_influx:8086
+      - POSTGRES_URL=postgres://user:password@db_postgre:5432/airpure_users
     networks:
-      - [cite_start]backend_net
+      - backend_net
 
   db_postgre:
-    image: postgres:latest
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: airpure_users
+    volumes:
+      - postgre_data:/var/lib/postgresql/data
     networks:
-      - [cite_start]backend_net
+      - backend_net
 
   db_influx:
-    image: influxdb:latest
+    image: influxdb:2.7-alpine
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: password123
+      DOCKER_INFLUXDB_INIT_ORG: airpure
+      DOCKER_INFLUXDB_INIT_BUCKET: sensor_data
+    volumes:
+      - influx_data:/var/lib/influxdb2
     networks:
-      - [cite_start]backend_net
+      - backend_net
 
-  [cite_start]adminer:
+  adminer:
     image: adminer
     ports:
       - "8080:8080"
     networks:
-      - [cite_start]backend_net
+      - backend_net
 
 networks:
-  [cite_start]frontend_net:
-  [cite_start]backend_net:
+  frontend_net:
+  backend_net:
+
+volumes:
+  postgre_data:
+  influx_data:
