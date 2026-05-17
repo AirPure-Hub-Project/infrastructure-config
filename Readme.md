@@ -1,52 +1,49 @@
-\# Auth Service \- AirPure Hub
+# AirPure Hub Infrastructure
 
-Microserviciu responsabil pentru gestionarea utilizatorilor si securitatea platformei.
+This repository contains the local development and Kubernetes configuration for AirPure Hub.
 
-\#\# Status Etapa 2: Implementat (40%)  
-\- \[x\] Configurare mediu Node.js cu Express.  
-\- \[x\] Implementare schelet ruta \`/login\` pentru autentificare.  
-\- \[x\] Integrare librarie \`jsonwebtoken\` pentru generarea de token-uri JWT.  
-\- \[x\] Dockerfile optimizat pentru mediul de productie.
+## Current Architecture
 
-\*\*Responsabil:\*\* Cojocaru Dragos
+- `auth-service`: Node.js/Express service for registration, login, JWT issuing, and token verification.
+- `logic-service`: Python/Flask service for AQI calculation and sensor reading processing.
+- `io-service`: Go service that owns user and reading persistence APIs.
+- `kong`: DB-less API gateway routing `/auth/*` to Auth and `/api/*` to Logic.
+- `postgres`: user persistence database.
+- `influxdb`: time-series target for processed air quality readings.
+- `adminer`: database management UI.
+- `prometheus` and `grafana`: monitoring and dashboard components.
+- `portainer`: cluster/container management UI.
+- Kubernetes `NetworkPolicy` resources isolate gateway, backend, database, observability, and management traffic.
 
-\# Logic Service \- AirPure Hub
+## Local Development
 
-Nucleul de procesare al datelor care calculeaza indicii de poluare.
+The Compose file is kept for local validation and smoke testing:
 
-\#\# Status Etapa 2: Implementat (40%)  
-\- \[x\] Setup proiect Python 3.9 cu Flask.  
-\- \[x\] Definire algoritm de baza pentru calculul AQI (PM2.5, CO2).  
-\- \[x\] Endpoint REST pentru primirea datelor de la senzori.  
-\- \[x\] Containerizare folosind Docker (python-slim).
+```sh
+docker compose -f docker-compose.yaml config
+docker compose -f docker-compose.yaml build
+docker compose -f docker-compose.yaml up
+```
 
-\*\*Responsabil:\*\* Bicoiu Ionut
+Gateway routes:
 
-\# IO Service \- AirPure Hub
+- `POST http://localhost:8000/auth/register`
+- `POST http://localhost:8000/auth/login`
+- `GET http://localhost:8000/auth/verify`
+- `POST http://localhost:8000/api/process`
+- `GET http://localhost:8000/api/history`
 
-Microserviciu dezvoltat in Go pentru gestionarea fluxurilor de date catre bazele de date.
+## Kubernetes
 
-\#\# Status Etapa 2: Implementat (40%)  
-\- \[x\] Configurare structura proiect in limbajul Go.  
-\- \[x\] Definire conexiuni catre PostgreSQL (utilizatori) si InfluxDB (date senzori).  
-\- \[x\] Implementare logica de baza pentru scrierea datelor de tip Time-Series.  
-\- \[x\] Dockerfile multi-stage pentru eficienta.
+Manifests live in `k8s/airpure-hub.yaml` and include Deployments, Services, ConfigMaps, Secrets, PVCs, Kong, Adminer, Prometheus, Grafana, and Portainer.
 
-\*\*Responsabil:\*\* Bicoiu Ionut
+The manifests use `nodeSelector` keys such as `airpure.io/tier=application`, `airpure.io/tier=database`, `airpure.io/tier=gateway`, and `airpure.io/tier=observability` as the Kubernetes equivalent of placement constraints.
 
-\# Infrastructure Configuration \- AirPure Hub
+Portainer uses a Kubernetes service account with cluster-admin access for cluster UI management. Grafana is provisioned with a Prometheus datasource and the AirPure Hub Overview dashboard.
 
-Acest repository contine configuratia de orchestrare si deployment pentru intreg ecosistemul AirPure Hub.
+Validation:
 
-\#\# Arhitectura Etapa 2  
-In aceasta etapa, am pus accent pe \*\*interconectivitate\*\* si \*\*izolarea retelelor\*\*:
-
-\#\#\# Componente implementate:  
-1\. \*\*Orchestrare:\*\* Fisier \`docker-compose.yml\` care ridica tot stack-ul.  
-2\. \*\*Retele:\*\* \- \`frontend\_net\`: Pentru comunicarea intre Gateway si servicii publice.  
-   \- \`backend\_net\`: Pentru izolarea bazelor de date de accesul extern.  
-3\. \*\*Gateway:\*\* Integrare Kong pentru rutarea securizata.  
-4\. \*\*Persistenta:\*\* Configurare containere PostgreSQL si InfluxDB.
-
-\*\*Responsabil:\*\* Cojocaru Dragos
-
+```sh
+docker run --rm -v "$PWD:/work" ghcr.io/yannh/kubeconform:v0.6.7 -summary /work/k8s/airpure-hub.yaml
+jq empty grafana/dashboards/*.json
+```

@@ -1,0 +1,992 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: airpure
+  labels:
+    app.kubernetes.io/part-of: airpure-hub
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: airpure-secrets
+  namespace: airpure
+type: Opaque
+stringData:
+  jwt-secret: cheie_secreta_idp
+  postgres-user: user
+  postgres-password: password
+  postgres-db: airpure_users
+  postgres-url: postgres://user:password@postgres:5432/airpure_users
+  influx-username: admin
+  influx-password: password123
+  influx-token: airpure-dev-token
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airpure-config
+  namespace: airpure
+data:
+  io-service-url: http://io-service:7000
+  influx-url: http://influxdb:8086
+  influx-org: airpure
+  influx-bucket: sensor_data
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-config
+  namespace: airpure
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+    services:
+      - name: auth-service
+        url: http://auth-service:3000
+        routes:
+          - name: auth-routes
+            paths:
+              - /auth
+            strip_path: true
+      - name: logic-service
+        url: http://logic-service:5000
+        routes:
+          - name: api-routes
+            paths:
+              - /api
+            strip_path: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: airpure
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: airpure-services
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - auth-service:3000
+              - logic-service:5000
+              - io-service:7000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: airpure
+data:
+  prometheus.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: airpure
+data:
+  airpure.yml: |
+    apiVersion: 1
+    providers:
+      - name: AirPure Hub
+        orgId: 1
+        folder: AirPure Hub
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: airpure
+data:
+  airpure-overview.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "Prometheus"},
+          "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "Down"}, "1": {"text": "Up"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+          "id": 1,
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+          "targets": [{"expr": "airpure_auth_service_up", "legendFormat": "Auth Service", "refId": "A"}],
+          "title": "Auth Service",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "Prometheus"},
+          "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "Down"}, "1": {"text": "Up"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+          "id": 2,
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+          "targets": [{"expr": "airpure_logic_service_up", "legendFormat": "Logic Service", "refId": "A"}],
+          "title": "Logic Service",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "Prometheus"},
+          "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"text": "Down"}, "1": {"text": "Up"}}, "type": "value"}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+          "id": 3,
+          "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "value_and_name"},
+          "targets": [{"expr": "airpure_io_service_up", "legendFormat": "IO Service", "refId": "A"}],
+          "title": "IO Service",
+          "type": "stat"
+        }
+      ],
+      "refresh": "10s",
+      "schemaVersion": 39,
+      "tags": ["airpure", "idp"],
+      "templating": {"list": []},
+      "time": {"from": "now-15m", "to": "now"},
+      "timezone": "browser",
+      "title": "AirPure Hub Overview",
+      "uid": "airpure-overview",
+      "version": 1
+    }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: airpure
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+  namespace: airpure
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: portainer-data
+  namespace: airpure
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: influx-data
+  namespace: airpure
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: airpure
+  labels:
+    app: postgres
+    tier: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        tier: database
+    spec:
+      nodeSelector:
+        airpure.io/tier: database
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: postgres-password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: postgres-db
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: airpure
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: influxdb
+  namespace: airpure
+  labels:
+    app: influxdb
+    tier: database
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: influxdb
+  template:
+    metadata:
+      labels:
+        app: influxdb
+        tier: database
+    spec:
+      nodeSelector:
+        airpure.io/tier: database
+      containers:
+        - name: influxdb
+          image: influxdb:2.7-alpine
+          ports:
+            - containerPort: 8086
+          env:
+            - name: DOCKER_INFLUXDB_INIT_MODE
+              value: setup
+            - name: DOCKER_INFLUXDB_INIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: influx-username
+            - name: DOCKER_INFLUXDB_INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: influx-password
+            - name: DOCKER_INFLUXDB_INIT_ORG
+              valueFrom:
+                configMapKeyRef:
+                  name: airpure-config
+                  key: influx-org
+            - name: DOCKER_INFLUXDB_INIT_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: airpure-config
+                  key: influx-bucket
+            - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: influx-token
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/influxdb2
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: influx-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: influxdb
+  namespace: airpure
+spec:
+  selector:
+    app: influxdb
+  ports:
+    - port: 8086
+      targetPort: 8086
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: io-service
+  namespace: airpure
+  labels:
+    app: io-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: io-service
+  template:
+    metadata:
+      labels:
+        app: io-service
+        tier: backend
+    spec:
+      nodeSelector:
+        airpure.io/tier: application
+      containers:
+        - name: io-service
+          image: airpure/io-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 7000
+          env:
+            - name: PORT
+              value: "7000"
+            - name: POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: postgres-url
+            - name: INFLUX_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: airpure-config
+                  key: influx-url
+            - name: INFLUX_ORG
+              valueFrom:
+                configMapKeyRef:
+                  name: airpure-config
+                  key: influx-org
+            - name: INFLUX_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: airpure-config
+                  key: influx-bucket
+            - name: INFLUX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: influx-token
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 7000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: io-service
+  namespace: airpure
+spec:
+  selector:
+    app: io-service
+  ports:
+    - port: 7000
+      targetPort: 7000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: airpure
+  labels:
+    app: auth-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+        tier: backend
+    spec:
+      nodeSelector:
+        airpure.io/tier: application
+      containers:
+        - name: auth-service
+          image: airpure/auth-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: IO_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: airpure-config
+                  key: io-service-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: jwt-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: airpure
+spec:
+  selector:
+    app: auth-service
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logic-service
+  namespace: airpure
+  labels:
+    app: logic-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: logic-service
+  template:
+    metadata:
+      labels:
+        app: logic-service
+        tier: backend
+    spec:
+      nodeSelector:
+        airpure.io/tier: application
+      containers:
+        - name: logic-service
+          image: airpure/logic-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          env:
+            - name: IO_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: airpure-config
+                  key: io-service-url
+            - name: AUTH_REQUIRED
+              value: "true"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: airpure-secrets
+                  key: jwt-secret
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logic-service
+  namespace: airpure
+spec:
+  selector:
+    app: logic-service
+  ports:
+    - port: 5000
+      targetPort: 5000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: airpure
+  labels:
+    app: kong
+    tier: gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kong
+  template:
+    metadata:
+      labels:
+        app: kong
+        tier: gateway
+    spec:
+      nodeSelector:
+        airpure.io/tier: gateway
+      containers:
+        - name: kong
+          image: kong:3.7
+          ports:
+            - containerPort: 8000
+            - containerPort: 8001
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: /kong/declarative/kong.yml
+            - name: KONG_PROXY_LISTEN
+              value: 0.0.0.0:8000
+            - name: KONG_ADMIN_LISTEN
+              value: 0.0.0.0:8001
+          volumeMounts:
+            - name: kong-config
+              mountPath: /kong/declarative
+      volumes:
+        - name: kong-config
+          configMap:
+            name: kong-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+  namespace: airpure
+spec:
+  type: LoadBalancer
+  selector:
+    app: kong
+  ports:
+    - name: proxy
+      port: 80
+      targetPort: 8000
+    - name: admin
+      port: 8001
+      targetPort: 8001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adminer
+  namespace: airpure
+  labels:
+    app: adminer
+    tier: management
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: adminer
+  template:
+    metadata:
+      labels:
+        app: adminer
+        tier: management
+    spec:
+      nodeSelector:
+        airpure.io/tier: observability
+      containers:
+        - name: adminer
+          image: adminer:latest
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adminer
+  namespace: airpure
+spec:
+  type: NodePort
+  selector:
+    app: adminer
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: airpure
+  labels:
+    app: prometheus
+    tier: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+        tier: observability
+    spec:
+      nodeSelector:
+        airpure.io/tier: observability
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.54.1
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: airpure
+spec:
+  type: NodePort
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: airpure
+  labels:
+    app: grafana
+    tier: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+        tier: observability
+    spec:
+      nodeSelector:
+        airpure.io/tier: observability
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.1.4
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: airpure
+spec:
+  type: NodePort
+  selector:
+    app: grafana
+  ports:
+    - port: 3000
+      targetPort: 3000
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portainer
+  namespace: airpure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: airpure-portainer-cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: portainer
+    namespace: airpure
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portainer
+  namespace: airpure
+  labels:
+    app: portainer
+    tier: management
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portainer
+  template:
+    metadata:
+      labels:
+        app: portainer
+        tier: management
+    spec:
+      serviceAccountName: portainer
+      nodeSelector:
+        airpure.io/tier: observability
+      containers:
+        - name: portainer
+          image: portainer/portainer-ce:2.21.1
+          ports:
+            - containerPort: 9000
+            - containerPort: 9443
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: portainer-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portainer
+  namespace: airpure
+spec:
+  type: NodePort
+  selector:
+    app: portainer
+  ports:
+    - name: http
+      port: 9000
+      targetPort: 9000
+    - name: https
+      port: 9443
+      targetPort: 9443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: airpure
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-public-gateway
+  namespace: airpure
+spec:
+  podSelector:
+    matchLabels:
+      app: kong
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-auth-ingress
+  namespace: airpure
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: kong
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-logic-ingress
+  namespace: airpure
+spec:
+  podSelector:
+    matchLabels:
+      app: logic-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: kong
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 5000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-io-ingress
+  namespace: airpure
+spec:
+  podSelector:
+    matchLabels:
+      app: io-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+        - podSelector:
+            matchLabels:
+              app: logic-service
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 7000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-ingress
+  namespace: airpure
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: io-service
+        - podSelector:
+            matchLabels:
+              app: adminer
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-influxdb-ingress
+  namespace: airpure
+spec:
+  podSelector:
+    matchLabels:
+      app: influxdb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: io-service
+      ports:
+        - protocol: TCP
+          port: 8086
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-management-ui-ingress
+  namespace: airpure
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          - adminer
+          - prometheus
+          - grafana
+          - portainer
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9443

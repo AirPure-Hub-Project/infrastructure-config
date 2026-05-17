@@ -1,0 +1,19 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: auth-service
+    url: http://auth-service:3000
+    routes:
+      - name: auth-routes
+        paths:
+          - /auth
+        strip_path: true
+
+  - name: logic-service
+    url: http://logic-service:5000
+    routes:
+      - name: api-routes
+        paths:
+          - /api
+        strip_path: true

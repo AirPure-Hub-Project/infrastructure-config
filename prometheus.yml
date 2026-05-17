@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: airpure-services
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - auth-service:3000
+          - logic-service:5000
+          - io-service:7000

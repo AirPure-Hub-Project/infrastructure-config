@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: AirPure Hub
+    orgId: 1
+    folder: AirPure Hub
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
